@@ -19,7 +19,7 @@ POLL_INTERVAL = 15
 
 PDF_URL = "https://www.horebeke.be/src/Frontend/Files/userfiles/files/Notulen%20ocmw%20raad%2024_11_2025.pdf"
 MUNICIPALITY = "http://data.lblod.info/id/bestuurseenheden/69af2347b1d0a9a39dbcf0ea4d94b9eaa15edb0c7d2dba56bbd9c39ab1c80e9f"
-SESSION_DATE = "2025-11-24"
+EXPECTED_LOCATION = "Kerkplein 1"
 JOB_CREATOR_SELF_SERVICE = "http://lblod.data.gift/services/job-self-service"
 
 JOBS_GRAPH = "http://mu.semte.ch/graphs/harvesting"
@@ -60,6 +60,7 @@ PREFIX org: <http://www.w3.org/ns/org#>
 PREFIX oslc: <http://open-services.net/ns/core#>
 PREFIX prov: <http://www.w3.org/ns/prov#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX task: <http://redpencil.data.gift/vocabularies/tasks/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 """
@@ -262,8 +263,10 @@ GRAPH <{PUBLIC_GRAPH}> {{
 FILTER(STRLEN(STR(?text)) > 0)"""),
         "segmenting wrote a segment annotation": ask(annotation_by(
             job, "segmenting", 'STRSTARTS(STR(?predicate), "http://mu.semte.ch/vocabularies/ext/")')),
-        "entity-extracting found the session date": ask(annotation_by(
-            job, "entity-extracting", f'STR(?object) = "{SESSION_DATE}"')),
+        f"entity-extracting found the location {EXPECTED_LOCATION}": ask(annotation_by(
+            job, "entity-extracting",
+            f'?predicate = prov:atLocation && EXISTS {{ ?object rdfs:label ?label . '
+            f'FILTER(STR(?label) = "{EXPECTED_LOCATION}") }}')),
     }
 
 
