@@ -1,0 +1,23 @@
+services:
+  database:
+    ports:
+      - "8891:8890"
+    volumes:
+      - ./data/e2e/authorization:/data
+  virtuoso:
+    volumes:
+      - ./data/e2e/db:/data
+  pdf-content:
+    environment:
+      SEGMENTATION__LLM__API_KEY: ${MISTRAL_API_KEY:-}
+    volumes:
+      - ./data/e2e/files:/mnt/share
+  named-entity-recognition:
+    environment:
+      SEGMENTATION__LLM__API_KEY: ${MISTRAL_API_KEY:-}
+      TRANSLATION__LANGCHAIN__API_KEY: ${MISTRAL_API_KEY:-}
+    volumes:
+      - ./data/e2e/ner-config.json:/config/config.json:ro
+  entity-linking:
+    environment:
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
