@@ -3,16 +3,18 @@ name: e2e
 on:
   pull_request:
     paths:
-      - compose/ai.yml
-      - compose/pipeline.yml
-      - compose/base-compose.yml
-      - config/job-controller/**
+      - compose/**
+      - docker-compose.yml
+      - docker-compose.e2e.yml
+      - config/virtuoso/**
+      - config/authorization/**
+      - config/migrations/**
       - config/delta/**
+      - config/job-controller/**
+      - config/annotation-job-splitter/**
+      - config/pdf-content/**
       - config/ner/**
       - config/nel/**
-      - config/pdf-content/**
-      - config/annotation-job-splitter/**
-      - docker-compose.e2e.yml
       - tests/e2e/**
       - .github/workflows/e2e.yml
   workflow_dispatch:
@@ -32,8 +34,38 @@ env:
     apache-tika named-entity-recognition entity-linking ollama
 
 jobs:
-  pipeline:
+  changes:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check whether a pipeline service changed
+        id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          decide() { echo "$1"; echo "run=$2" >> "$GITHUB_OUTPUT"; exit 0; }
+          [ "$EVENT" = pull_request ] || decide "Manual run" true
+          other=$(git diff --name-only "$BASE" HEAD | grep -v -E '^(compose/|docker-compose\.yml$)' || true)
+          [ -z "$other" ] || decide "Changed outside the compose files: $other" true
+          # Hashes contain absolute paths, so both sides are computed in this same checkout.
+          hashes() { $COMPOSE config --hash "${SERVICES// /,}" | sort; }
+          head_hashes=$(hashes)
+          git checkout -q "$BASE"
+          base_hashes=$(hashes) || decide "Could not hash the base, running to be safe" true
+          [ "$head_hashes" != "$base_hashes" ] || decide "No pipeline service changed" false
+          diff <(echo "$base_hashes") <(echo "$head_hashes") | grep '^>' || true
+          decide "Pipeline services changed" true
+
+  pipeline:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
