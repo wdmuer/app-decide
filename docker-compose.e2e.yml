@@ -21,3 +21,6 @@ services:
   entity-linking:
     environment:
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+  codelist-labeling:
+    environment:
+      LLM__API_KEY: ${MISTRAL_API_KEY:-}
