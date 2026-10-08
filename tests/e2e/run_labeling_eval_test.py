@@ -39,6 +39,7 @@ def seed():
     job, job_id = new_resource("http://redpencil.data.gift/id/job/")
     first_task, task_id = new_resource("http://redpencil.data.gift/id/task/")
     container, container_id = new_resource("http://redpencil.data.gift/id/dataContainers/")
+    shape, shape_id = new_resource("http://data.lblod.info/id/shapes/")
     now = f'"{datetime.now(timezone.utc).isoformat()}"^^xsd:dateTime'
     expressions = {}
     decisions = []
@@ -66,10 +67,15 @@ INSERT DATA {{
       dct:creator <{JOB_CREATOR_SELF_SERVICE}> ;
       adms:status <{STATUS}busy> ;
       task:operation <{JOB_OP}> ;
-      ext:codelist <{CODELIST}> .
+      ext:codelist <{CODELIST}> ;
+      ext:shapeForTargets <{shape}> ;
+      ext:graphForTargets <{PUBLIC_GRAPH}> .
+    <{shape}> a sh:NodeShape ;
+      mu:uuid "{shape_id}" ;
+      sh:targetNode {resources} .
     <{container}> a nfo:DataContainer ;
       mu:uuid "{container_id}" ;
-      task:hasResource {resources} .
+      task:hasResource <{shape}> .
     <{first_task}> a task:Task ;
       mu:uuid "{task_id}" ;
       dct:created {now} ;
