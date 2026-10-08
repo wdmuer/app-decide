@@ -17,7 +17,7 @@ CHAIN = [
 ]
 JOB_CREATOR_SELF_SERVICE = "http://lblod.data.gift/services/job-self-service"
 
-CODELIST = "http://data.lblod.gift/id/conceptscheme/sdg-simple"
+CODELIST = "http://lblod.data.gift/id/conceptscheme/sdg-simple"
 CODELIST_GRAPH = "http://mu.semte.ch/graphs/public"
 NO_MATCH = "http://mu.semte.ch/vocabularies/ext/no-match-found"
 IMPACT_PREFIX = "http://mu.semte.ch/vocabularies/ext/impact/"
