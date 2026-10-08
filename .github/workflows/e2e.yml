@@ -1,0 +1,143 @@
+name: e2e
+
+on:
+  pull_request:
+    paths:
+      - compose/**
+      - docker-compose.yml
+      - docker-compose.e2e.yml
+      - config/virtuoso/**
+      - config/authorization/**
+      - config/migrations/**
+      - config/delta/**
+      - config/job-controller/**
+      - config/annotation-job-splitter/**
+      - config/pdf-content/**
+      - config/ner/**
+      - config/nel/**
+      - config/codelist/**
+      - tests/e2e/**
+      - .github/workflows/e2e.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COMPOSE: docker compose -p app-decide-e2e -f docker-compose.yml -f docker-compose.e2e.yml
+  PIPELINE_SERVICES: >-
+    virtuoso database deltanotifier migrations job-controller
+    harvest_singleton-job annotation-job-splitter pdf-scraper pdf-content
+    apache-tika named-entity-recognition entity-linking ollama
+  LABELING_SERVICES: >-
+    virtuoso database deltanotifier migrations job-controller
+    harvest_singleton-job annotation-job-splitter codelist-labeling
+
+jobs:
+  changes:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      pipeline: ${{ steps.check.outputs.pipeline }}
+      labeling: ${{ steps.check.outputs.labeling }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check whether a pipeline service changed
+        id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          decide_all() { echo "$1"; printf 'pipeline=true\nlabeling=true\n' >> "$GITHUB_OUTPUT"; exit 0; }
+          [ "$EVENT" = pull_request ] || decide_all "Manual run"
+          other=$(git diff --name-only "$BASE" HEAD | grep -v -E '^(compose/|docker-compose\.yml$)' || true)
+          [ -z "$other" ] || decide_all "Changed outside the compose files: $other"
+          # Hashes contain absolute paths, so both sides are computed in this same checkout.
+          hashes() { $COMPOSE config --hash "${1// /,}" | sort; }
+          head_pipeline=$(hashes "$PIPELINE_SERVICES"); head_labeling=$(hashes "$LABELING_SERVICES")
+          git checkout -q "$BASE"
+          base_pipeline=$(hashes "$PIPELINE_SERVICES") && base_labeling=$(hashes "$LABELING_SERVICES") \
+            || decide_all "Could not hash the base, running to be safe"
+          changed() { if [ "$1" != "$2" ]; then echo true; else echo false; fi; }
+          echo "pipeline=$(changed "$head_pipeline" "$base_pipeline")" >> "$GITHUB_OUTPUT"
+          echo "labeling=$(changed "$head_labeling" "$base_labeling")" >> "$GITHUB_OUTPUT"
+          diff <(echo "$base_pipeline") <(echo "$head_pipeline") | grep '^>' || true
+          diff <(echo "$base_labeling") <(echo "$head_labeling") | grep '^>' || true
+
+  pipeline:
+    needs: changes
+    if: needs.changes.outputs.pipeline == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Free disk space on the runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+
+      - uses: actions/checkout@v7
+
+      - name: Check the Mistral secret
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: test -n "$MISTRAL_API_KEY" || { echo "::error::Repository secret MISTRAL_API_KEY is not set"; exit 1; }
+
+      - name: Generate the e2e NER config
+        run: python3 tests/e2e/make_ner_config.py
+
+      - name: Start the pipeline stack
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: $COMPOSE up -d $PIPELINE_SERVICES
+
+      - name: Run the pipeline test
+        run: python3 tests/e2e/run_pipeline_test.py
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: $COMPOSE logs --no-color $PIPELINE_SERVICES
+
+      - name: Tear down the stack
+        if: always()
+        run: $COMPOSE down -v
+
+      - name: Report disk usage
+        if: always()
+        run: df -h /
+
+  labeling:
+    needs: changes
+    if: needs.changes.outputs.labeling == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the Mistral secret
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: test -n "$MISTRAL_API_KEY" || { echo "::error::Repository secret MISTRAL_API_KEY is not set"; exit 1; }
+
+      - name: Start the labeling stack
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: $COMPOSE up -d $LABELING_SERVICES
+
+      - name: Run the labeling evaluation test
+        run: python3 tests/e2e/run_labeling_eval_test.py
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: $COMPOSE logs --no-color $LABELING_SERVICES
+
+      - name: Tear down the stack
+        if: always()
+        run: $COMPOSE down -v
